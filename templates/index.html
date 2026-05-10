@@ -1,0 +1,1502 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tennis Doubles Match Analyzer</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #22263a;
+  --border: #2e3250;
+  --accent: #6c63ff;
+  --accent2: #a78bfa;
+  --text: #e2e8f0;
+  --muted: #8892a4;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --radius: 12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 2rem 1rem;
+}
+
+a { color: var(--accent2); }
+
+/* ── Header ── */
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+.header h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.header h1 span { color: var(--accent2); }
+.header p {
+  color: var(--muted);
+  margin-top: 0.4rem;
+  font-size: 1rem;
+}
+
+/* ── Key warning banner ── */
+#key-warning {
+  display: none;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid var(--red);
+  color: #fca5a5;
+  border-radius: var(--radius);
+  padding: 0.85rem 1.2rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Tabs ── */
+.tabs-wrapper {
+  max-width: 860px;
+  margin: 0 auto;
+}
+.tab-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+}
+.tab-btn {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { color: var(--text); background: var(--surface2); }
+.tab-btn.active { background: var(--accent); color: #fff; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Progress steps ── */
+.steps-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 2rem;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+.step-circle.active { border-color: var(--accent); color: var(--accent); background: rgba(108,99,255,0.15); }
+.step-circle.done { border-color: var(--green); background: var(--green); color: #fff; }
+.step-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.step-label.active { color: var(--accent); font-weight: 600; }
+.step-label.done { color: var(--green); }
+.step-connector {
+  width: 60px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 0.5rem;
+  transition: background 0.3s;
+}
+.step-connector.done { background: var(--green); }
+
+/* ── Cards / surfaces ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+/* ── Drop zone ── */
+#dropZone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+#dropZone:hover, #dropZone.drag-over {
+  border-color: var(--accent);
+  background: rgba(108,99,255,0.08);
+}
+#dropZone .drop-icon { font-size: 3rem; margin-bottom: 0.8rem; }
+#dropZone .drop-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.4rem; }
+#dropZone .drop-sub { font-size: 0.85rem; color: var(--muted); }
+#videoFile { display: none; }
+
+.file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(108,99,255,0.2);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  margin-top: 1rem;
+  color: var(--accent2);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.4rem;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #5a52e0; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.btn-danger { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+.btn-danger:hover { background: rgba(239,68,68,0.25); }
+.btn-lg { padding: 0.9rem 2rem; font-size: 1.05rem; width: 100%; justify-content: center; }
+
+.btn-row {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+}
+
+/* ── Tennis court diagram ── */
+.court-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+.tennis-court {
+  position: relative;
+  width: 500px;
+  height: 320px;
+  background: #2d6a4f;
+  border: 2px solid white;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Outer singles sidelines */
+.court-line { position: absolute; background: white; }
+
+/* Left singles sideline */
+.line-singles-left  { left: 50px; top: 0; width: 2px; height: 100%; }
+/* Right singles sideline */
+.line-singles-right { right: 50px; top: 0; width: 2px; height: 100%; }
+/* Service line top */
+.line-service-top   { left: 50px; top: 80px; width: calc(100% - 100px); height: 2px; }
+/* Service line bottom */
+.line-service-bot   { left: 50px; bottom: 80px; width: calc(100% - 100px); height: 2px; }
+/* Center service line */
+.line-center-svc    { left: 50%; top: 80px; width: 2px; height: calc(100% - 160px); transform: translateX(-50%); }
+/* Net */
+.court-net          { left: 0; top: 50%; width: 100%; height: 4px; transform: translateY(-50%); background: white; z-index: 2; }
+/* Net posts */
+.net-post-left  { left: 0; top: calc(50% - 8px); width: 8px; height: 16px; background: #ccc; z-index: 3; }
+.net-post-right { right: 0; top: calc(50% - 8px); width: 8px; height: 16px; background: #ccc; z-index: 3; }
+
+/* Court quadrants for player inputs */
+.court-quadrant {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.2s;
+}
+.court-quadrant:hover { background: rgba(255,255,255,0.05); }
+
+/* Far side (top half) */
+.quad-BL { left: 0;   top: 0;   width: 50%; height: 50%; }
+.quad-BR { left: 50%; top: 0;   width: 50%; height: 50%; }
+/* Near side (bottom half) */
+.quad-FL { left: 0;   top: 50%; width: 50%; height: 50%; }
+.quad-FR { left: 50%; top: 50%; width: 50%; height: 50%; }
+
+.quad-pos-label {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.quad-name-display {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  min-height: 1.2em;
+  text-align: center;
+  padding: 0 4px;
+}
+.court-input {
+  width: 110px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.78rem;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.court-input:focus { border-color: var(--accent2); }
+.court-input::placeholder { color: rgba(255,255,255,0.4); }
+
+/* Net label */
+.net-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.6);
+  color: rgba(255,255,255,0.7);
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  z-index: 4;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+/* Side labels */
+.side-label {
+  position: absolute;
+  right: 6px;
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+.side-label-far  { top: 8px; }
+.side-label-near { bottom: 8px; }
+
+/* ── Below-court inputs ── */
+.below-court-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+.input-group label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.input-group input {
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-group input:focus { border-color: var(--accent); }
+
+/* ── Progress box ── */
+#progressBox {
+  display: none;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.5rem;
+  margin-top: 1rem;
+  text-align: center;
+}
+.progress-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  font-size: 0.95rem;
+  color: var(--accent2);
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(167,139,250,0.3);
+  border-top-color: var(--accent2);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Results ── */
+.match-summary {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.match-summary .summary-text {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.team-scores {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.team-score-item {
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.team-score-item.winner {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(34,197,94,0.1);
+}
+.vs-divider { color: var(--muted); font-size: 0.85rem; }
+
+/* ── Player cards grid ── */
+.player-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.player-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  transition: border-color 0.2s;
+}
+.player-card:hover { border-color: var(--accent); }
+.player-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.player-card-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.pos-badge {
+  background: rgba(108,99,255,0.2);
+  color: var(--accent2);
+  border: 1px solid rgba(108,99,255,0.4);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.rating-ring-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.rating-ring {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 4px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.rating-ring.green  { border-color: var(--green);  color: var(--green); }
+.rating-ring.amber  { border-color: var(--amber);  color: var(--amber); }
+.rating-ring.red    { border-color: var(--red);    color: var(--red); }
+
+.feedback-section { margin-top: 0.8rem; }
+.feedback-section h4 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.5rem;
+}
+.feedback-section.strengths h4 { color: var(--green); }
+.feedback-section.improve h4   { color: var(--amber); }
+.feedback-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.feedback-list li {
+  font-size: 0.85rem;
+  color: var(--text);
+  padding-left: 1.2em;
+  position: relative;
+  line-height: 1.4;
+}
+.feedback-list li::before {
+  position: absolute;
+  left: 0;
+}
+.strengths .feedback-list li::before { content: '●'; color: var(--green); font-size: 0.6em; top: 0.3em; }
+.improve   .feedback-list li::before { content: '●'; color: var(--amber); font-size: 0.6em; top: 0.3em; }
+
+/* ── History ── */
+.history-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.8rem;
+  overflow: hidden;
+}
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  gap: 1rem;
+}
+.history-header:hover { background: var(--surface2); }
+.history-meta { flex: 1; min-width: 0; }
+.history-date { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.2rem; }
+.history-filename {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-scores { font-size: 0.85rem; color: var(--muted); margin-top: 0.2rem; }
+.history-players { font-size: 0.8rem; color: var(--muted); margin-top: 0.1rem; }
+.history-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.chevron {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.chevron.open { transform: rotate(180deg); }
+.history-body {
+  display: none;
+  padding: 0 1.2rem 1.2rem;
+  border-top: 1px solid var(--border);
+}
+.history-body.open { display: block; }
+
+/* ── How to use ── */
+.howto-section { margin-bottom: 1.2rem; }
+.howto-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent2);
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.howto-section ol, .howto-section ul {
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.howto-section li { font-size: 0.9rem; color: var(--text); line-height: 1.5; }
+.howto-section li span { color: var(--muted); }
+
+.rating-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+}
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+}
+.empty-state .empty-icon { font-size: 3rem; margin-bottom: 0.8rem; }
+.empty-state p { font-size: 1rem; }
+
+/* ── Error toast ── */
+#toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: rgba(239,68,68,0.95);
+  color: white;
+  padding: 0.8rem 1.2rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  max-width: 360px;
+  z-index: 9999;
+  display: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .player-cards-grid { grid-template-columns: 1fr; }
+  .tennis-court { width: 320px; height: 210px; }
+  .court-input { width: 80px; font-size: 0.7rem; }
+  .quad-name-display { font-size: 0.75rem; }
+  .step-connector { width: 30px; }
+  .below-court-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════ -->
+<div class="header">
+  <h1>Tennis Doubles <span>Match Analyzer</span></h1>
+  <p>AI-powered coaching feedback for all 4 players</p>
+</div>
+
+<!-- API Key Warning -->
+<div id="key-warning">
+  ⚠️ Gemini API key not configured. Go to Render Dashboard → Environment → add <strong>GEMINI_API_KEY</strong>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TABS
+══════════════════════════════════════════════ -->
+<div class="tabs-wrapper">
+  <div class="tab-buttons" role="tablist">
+    <button class="tab-btn active" role="tab" aria-selected="true"  data-tab="new-analysis">New Analysis</button>
+    <button class="tab-btn"        role="tab" aria-selected="false" data-tab="history">Match History</button>
+    <button class="tab-btn"        role="tab" aria-selected="false" data-tab="howto">How to Use</button>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       TAB 1 — NEW ANALYSIS
+  ════════════════════════════════════════════ -->
+  <div id="tab-new-analysis" class="tab-panel active">
+
+    <!-- Progress steps bar -->
+    <div class="steps-bar" id="stepsBar">
+      <div class="step-item">
+        <div class="step-circle active" id="sc1">1</div>
+        <span class="step-label active" id="sl1">Upload Video</span>
+      </div>
+      <div class="step-connector" id="conn1"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc2">2</div>
+        <span class="step-label" id="sl2">Tag Players</span>
+      </div>
+      <div class="step-connector" id="conn2"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc3">3</div>
+        <span class="step-label" id="sl3">Results</span>
+      </div>
+    </div>
+
+    <!-- ── STEP 1: Upload Video ── -->
+    <div id="step1">
+      <div class="card">
+        <div id="dropZone" role="button" tabindex="0" aria-label="Upload video file">
+          <div class="drop-icon">🎾</div>
+          <div class="drop-title">Click or drag your match video here</div>
+          <div class="drop-sub">MP4, MOV, AVI, MKV, WEBM &bull; Up to 500MB</div>
+          <input type="file" id="videoFile" accept="video/*" aria-label="Video file input">
+          <div id="filePill" style="display:none;" class="file-pill">
+            <span>📎</span>
+            <span id="filePillName"></span>
+            <span id="filePillSize" style="color:var(--muted);"></span>
+          </div>
+        </div>
+        <div style="margin-top:1.2rem; text-align:right;">
+          <button class="btn btn-primary" id="nextBtn" disabled>Next: Tag Players →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 2: Tag Players ── -->
+    <div id="step2" style="display:none;">
+      <div class="card">
+        <h2 style="font-size:1.1rem; margin-bottom:0.3rem;">Tag Players on Court</h2>
+        <p style="font-size:0.85rem; color:var(--muted); margin-bottom:1rem;">
+          Type each player's name in their court position. Far side = opponents, near side = your team.
+        </p>
+
+        <!-- Tennis court diagram -->
+        <div class="court-wrapper">
+          <div class="tennis-court" aria-label="Tennis court diagram">
+            <!-- Court lines -->
+            <div class="court-line line-singles-left"></div>
+            <div class="court-line line-singles-right"></div>
+            <div class="court-line line-service-top"></div>
+            <div class="court-line line-service-bot"></div>
+            <div class="court-line line-center-svc"></div>
+            <!-- Net -->
+            <div class="court-line court-net"></div>
+            <div class="court-line net-post-left"></div>
+            <div class="court-line net-post-right"></div>
+            <!-- Net label -->
+            <div class="net-label">NET</div>
+            <!-- Side labels -->
+            <div class="side-label side-label-far">FAR (opponents)</div>
+            <div class="side-label side-label-near">NEAR (your team)</div>
+
+            <!-- Quadrant: Back Left (far side left) -->
+            <div class="court-quadrant quad-BL">
+              <div class="quad-pos-label">Back Left</div>
+              <div class="quad-name-display" id="courtNameBL"></div>
+              <input class="court-input" id="courtBL" type="text" placeholder="Player name"
+                     aria-label="Back Left player name" maxlength="30">
+            </div>
+            <!-- Quadrant: Back Right (far side right) -->
+            <div class="court-quadrant quad-BR">
+              <div class="quad-pos-label">Back Right</div>
+              <div class="quad-name-display" id="courtNameBR"></div>
+              <input class="court-input" id="courtBR" type="text" placeholder="Player name"
+                     aria-label="Back Right player name" maxlength="30">
+            </div>
+            <!-- Quadrant: Front Left (near side left) -->
+            <div class="court-quadrant quad-FL">
+              <div class="quad-pos-label">Front Left</div>
+              <div class="quad-name-display" id="courtNameFL"></div>
+              <input class="court-input" id="courtFL" type="text" placeholder="Player name"
+                     aria-label="Front Left player name" maxlength="30">
+            </div>
+            <!-- Quadrant: Front Right (near side right) -->
+            <div class="court-quadrant quad-FR">
+              <div class="quad-pos-label">Front Right</div>
+              <div class="quad-name-display" id="courtNameFR"></div>
+              <input class="court-input" id="courtFR" type="text" placeholder="Player name"
+                     aria-label="Front Right player name" maxlength="30">
+            </div>
+          </div>
+        </div>
+
+        <!-- Below-court inputs (accessibility mirrors) -->
+        <div class="below-court-grid">
+          <div class="input-group">
+            <label for="inputFL">Front Left (FL) — Near side</label>
+            <input type="text" id="inputFL" placeholder="Player name" maxlength="30">
+          </div>
+          <div class="input-group">
+            <label for="inputFR">Front Right (FR) — Near side</label>
+            <input type="text" id="inputFR" placeholder="Player name" maxlength="30">
+          </div>
+          <div class="input-group">
+            <label for="inputBL">Back Left (BL) — Far side</label>
+            <input type="text" id="inputBL" placeholder="Player name" maxlength="30">
+          </div>
+          <div class="input-group">
+            <label for="inputBR">Back Right (BR) — Far side</label>
+            <input type="text" id="inputBR" placeholder="Player name" maxlength="30">
+          </div>
+        </div>
+
+        <!-- Analyze button -->
+        <button class="btn btn-primary btn-lg" id="analyzeBtn" disabled>Analyze Match 🎾</button>
+
+        <!-- Progress messages -->
+        <div id="progressBox">
+          <div class="progress-msg">
+            <div class="spinner"></div>
+            <span id="progressMsg">Preparing...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 3: Results ── -->
+    <div id="step3" style="display:none;">
+      <!-- Match summary -->
+      <div class="match-summary" id="matchSummary">
+        <div class="summary-text">Match Analysis Complete</div>
+        <div class="team-scores" id="teamScores"></div>
+      </div>
+
+      <!-- Player cards 2x2 grid -->
+      <div class="player-cards-grid" id="resultsGrid"></div>
+
+      <!-- Action buttons -->
+      <div class="btn-row">
+        <button class="btn btn-primary" id="saveHistoryBtn">💾 Save to History</button>
+        <button class="btn btn-secondary" id="analyzeAnotherBtn">🔄 Analyze Another Match</button>
+      </div>
+    </div>
+
+  </div><!-- /tab-new-analysis -->
+
+  <!-- ════════════════════════════════════════════
+       TAB 2 — MATCH HISTORY
+  ════════════════════════════════════════════ -->
+  <div id="tab-history" class="tab-panel">
+    <div class="card" style="padding:1rem 1.2rem; margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between;">
+      <h2 style="font-size:1.1rem;">Match History</h2>
+      <button class="btn btn-secondary" id="refreshHistoryBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem;">↻ Refresh</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       TAB 3 — HOW TO USE
+  ════════════════════════════════════════════ -->
+  <div id="tab-howto" class="tab-panel">
+    <div class="card howto-section">
+      <h3>⚙️ Setup</h3>
+      <ol>
+        <li>Get a free Gemini API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
+        <li>Set <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;">GEMINI_API_KEY</code> in your Render environment variables</li>
+      </ol>
+    </div>
+
+    <div class="card howto-section">
+      <h3>🎥 Recording Tips</h3>
+      <ul>
+        <li>Position camera at the side of the court, mid-court height</li>
+        <li>Use a tripod or fence mount for stable footage</li>
+        <li>Ensure the full court is visible in frame</li>
+        <li>Good lighting improves analysis accuracy</li>
+      </ul>
+    </div>
+
+    <div class="card howto-section">
+      <h3>📱 Using the App</h3>
+      <ol>
+        <li>Upload your match video <span>(up to 500MB)</span></li>
+        <li>Tag each player by clicking their position on the court diagram</li>
+        <li>Click <strong>Analyze Match</strong> and wait ~30–60 seconds</li>
+        <li>Review per-player ratings and coaching feedback</li>
+      </ol>
+    </div>
+
+    <div class="card howto-section">
+      <h3>📊 Understanding Results</h3>
+      <p style="font-size:0.88rem; color:var(--muted); margin-bottom:0.8rem;">Ratings are out of 10</p>
+      <div class="rating-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:var(--green);"></div>
+          <span><strong style="color:var(--green);">Green (7+)</strong> — Strong performance</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:var(--amber);"></div>
+          <span><strong style="color:var(--amber);">Amber (5–7)</strong> — Average, room to improve</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:var(--red);"></div>
+          <span><strong style="color:var(--red);">Red (&lt;5)</strong> — Needs significant work</span>
+        </div>
+      </div>
+      <p style="font-size:0.82rem; color:var(--muted); margin-top:0.8rem;">
+        Feedback is AI-generated and indicative, not professional coaching.
+      </p>
+    </div>
+  </div><!-- /tab-howto -->
+
+</div><!-- /tabs-wrapper -->
+
+<!-- Toast notification -->
+<div id="toast" role="alert" aria-live="assertive"></div>
+
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════ */
+const state = {
+  selectedFile: null,
+  tempName: null,
+  filename: null,
+  players: { FL: '', FR: '', BL: '', BR: '' },
+  analysisResult: null,
+  currentStep: 1,
+  toastTimer: null
+};
+
+/* ══════════════════════════════════════════════
+   UTILITY HELPERS
+══════════════════════════════════════════════ */
+
+/**
+ * Format ISO / SQLite datetime string to readable format.
+ * e.g. "2024-01-15 10:30:00" → "Jan 15, 2024 10:30 AM"
+ */
+function formatDate(dateStr) {
+  if (!dateStr) return 'Unknown date';
+  try {
+    // Handle both "2024-01-15 10:30:00" and ISO formats
+    const normalized = dateStr.replace(' ', 'T');
+    const d = new Date(normalized);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Returns HTML string for a colored rating ring.
+ * Green ≥7, Amber ≥5, Red <5
+ */
+function renderRatingRing(rating) {
+  const num = parseFloat(rating) || 0;
+  let cls = 'red';
+  if (num >= 7) cls = 'green';
+  else if (num >= 5) cls = 'amber';
+  return `<div class="rating-ring ${cls}" aria-label="Rating ${num} out of 10">${num.toFixed(1)}</div>`;
+}
+
+/**
+ * Show a brief toast message (error by default).
+ */
+function showToast(msg, duration = 4000) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => { toast.style.display = 'none'; }, duration);
+}
+
+/**
+ * Update the progress box with a new message + spinner.
+ */
+function showProgress(message) {
+  const box = document.getElementById('progressBox');
+  const msg = document.getElementById('progressMsg');
+  box.style.display = 'block';
+  msg.textContent = message;
+}
+
+function hideProgress() {
+  document.getElementById('progressBox').style.display = 'none';
+}
+
+/**
+ * Format bytes to human-readable size.
+ */
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+/* ══════════════════════════════════════════════
+   STEP NAVIGATION
+══════════════════════════════════════════════ */
+function goToStep(n) {
+  state.currentStep = n;
+  [1, 2, 3].forEach(i => {
+    const el = document.getElementById('step' + i);
+    if (el) el.style.display = (i === n) ? 'block' : 'none';
+  });
+  updateStepsBar(n);
+}
+
+function updateStepsBar(active) {
+  [1, 2, 3].forEach(i => {
+    const circle = document.getElementById('sc' + i);
+    const label  = document.getElementById('sl' + i);
+    circle.classList.remove('active', 'done');
+    label.classList.remove('active', 'done');
+    if (i < active) {
+      circle.classList.add('done');
+      circle.textContent = '✓';
+      label.classList.add('done');
+    } else if (i === active) {
+      circle.classList.add('active');
+      circle.textContent = i;
+      label.classList.add('active');
+    } else {
+      circle.textContent = i;
+    }
+  });
+  // connectors
+  const conn1 = document.getElementById('conn1');
+  const conn2 = document.getElementById('conn2');
+  conn1.classList.toggle('done', active > 1);
+  conn2.classList.toggle('done', active > 2);
+}
+
+/* ══════════════════════════════════════════════
+   TAB SWITCHING
+══════════════════════════════════════════════ */
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn.dataset.tab === tabId;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === 'tab-' + tabId);
+  });
+  if (tabId === 'history') loadHistory();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+/* ══════════════════════════════════════════════
+   DRAG & DROP / FILE SELECTION
+══════════════════════════════════════════════ */
+const dropZone  = document.getElementById('dropZone');
+const videoFile = document.getElementById('videoFile');
+const nextBtn   = document.getElementById('nextBtn');
+const filePill  = document.getElementById('filePill');
+
+dropZone.addEventListener('click', () => videoFile.click());
+dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') videoFile.click(); });
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelected(file);
+});
+
+videoFile.addEventListener('change', () => {
+  if (videoFile.files[0]) handleFileSelected(videoFile.files[0]);
+});
+
+function handleFileSelected(file) {
+  // Basic validation
+  const allowed = ['video/mp4','video/quicktime','video/x-msvideo','video/x-matroska','video/webm','video/avi'];
+  const ext = file.name.split('.').pop().toLowerCase();
+  const allowedExt = ['mp4','mov','avi','mkv','webm'];
+  if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
+    showToast('Please select a valid video file (MP4, MOV, AVI, MKV, WEBM).');
+    return;
+  }
+  const maxBytes = 500 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    showToast('File is too large. Maximum size is 500MB.');
+    return;
+  }
+  state.selectedFile = file;
+  document.getElementById('filePillName').textContent = file.name;
+  document.getElementById('filePillSize').textContent = formatBytes(file.size);
+  filePill.style.display = 'inline-flex';
+  nextBtn.disabled = false;
+}
+
+/* ══════════════════════════════════════════════
+   STEP 1 → STEP 2: UPLOAD
+══════════════════════════════════════════════ */
+nextBtn.addEventListener('click', async () => {
+  if (!state.selectedFile) return;
+  nextBtn.disabled = true;
+  nextBtn.textContent = 'Uploading…';
+
+  try {
+    const formData = new FormData();
+    formData.append('video', state.selectedFile);
+
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    state.tempName = data.temp_name;
+    state.filename  = data.filename || state.selectedFile.name;
+    goToStep(2);
+  } catch (err) {
+    showToast('Upload failed: ' + err.message);
+    nextBtn.disabled = false;
+    nextBtn.textContent = 'Next: Tag Players →';
+  }
+});
+
+/* ══════════════════════════════════════════════
+   PLAYER NAME INPUTS — TWO-WAY SYNC
+══════════════════════════════════════════════ */
+const positions = ['FL', 'FR', 'BL', 'BR'];
+
+// Court inputs → below-court inputs + name display
+positions.forEach(pos => {
+  const courtInput = document.getElementById('court' + pos);
+  const belowInput = document.getElementById('input' + pos);
+  const nameDisplay = document.getElementById('courtName' + pos);
+
+  courtInput.addEventListener('input', () => {
+    const val = courtInput.value;
+    belowInput.value = val;
+    nameDisplay.textContent = val;
+    state.players[pos] = val.trim();
+    checkAnalyzeReady();
+  });
+
+  belowInput.addEventListener('input', () => {
+    const val = belowInput.value;
+    courtInput.value = val;
+    nameDisplay.textContent = val;
+    state.players[pos] = val.trim();
+    checkAnalyzeReady();
+  });
+});
+
+function checkAnalyzeReady() {
+  const allFilled = positions.every(p => state.players[p].length > 0);
+  document.getElementById('analyzeBtn').disabled = !allFilled;
+}
+
+/* ══════════════════════════════════════════════
+   STEP 2 → STEP 3: ANALYZE
+══════════════════════════════════════════════ */
+document.getElementById('analyzeBtn').addEventListener('click', async () => {
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = 'Analyzing…';
+
+  const messages = [
+    '📤 Uploading video to Google File API…',
+    '⏳ Processing video… this may take 30–60 seconds',
+    '🎾 Analyzing match performance…'
+  ];
+
+  showProgress(messages[0]);
+  let msgIdx = 0;
+  const msgInterval = setInterval(() => {
+    msgIdx = (msgIdx + 1) % messages.length;
+    showProgress(messages[msgIdx]);
+  }, 8000);
+
+  try {
+    const payload = {
+      temp_name: state.tempName,
+      filename:  state.filename,
+      players:   { ...state.players }
+    };
+
+    const res = await fetch('/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    clearInterval(msgInterval);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Analysis failed' }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    state.analysisResult = data;
+    hideProgress();
+    renderResults(data);
+    goToStep(3);
+  } catch (err) {
+    clearInterval(msgInterval);
+    hideProgress();
+    showToast('Analysis failed: ' + err.message);
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = 'Analyze Match 🎾';
+  }
+});
+
+/* ══════════════════════════════════════════════
+   RENDER RESULTS
+══════════════════════════════════════════════ */
+function renderResults(data) {
+  // Match summary
+  const players = data.players || {};
+  const fl = players.FL || {};
+  const fr = players.FR || {};
+  const bl = players.BL || {};
+  const br = players.BR || {};
+
+  const team1Avg = avg([fl.rating, fr.rating]);
+  const team2Avg = avg([bl.rating, br.rating]);
+  const team1Name = `${fl.name || 'FL'} + ${fr.name || 'FR'}`;
+  const team2Name = `${bl.name || 'BL'} + ${br.name || 'BR'}`;
+  const team1Wins = team1Avg >= team2Avg;
+
+  document.getElementById('teamScores').innerHTML = `
+    <div class="team-score-item ${team1Wins ? 'winner' : ''}">
+      Team 1 (${escHtml(team1Name)}): ${team1Avg.toFixed(1)} avg
+    </div>
+    <div class="vs-divider">vs</div>
+    <div class="team-score-item ${!team1Wins ? 'winner' : ''}">
+      Team 2 (${escHtml(team2Name)}): ${team2Avg.toFixed(1)} avg
+    </div>
+  `;
+
+  // Player cards
+  renderPlayerCards(players, 'resultsGrid');
+}
+
+/**
+ * Renders a 2x2 grid of player cards into the given container.
+ * Order: FL (top-left), FR (top-right), BL (bottom-left), BR (bottom-right)
+ */
+function renderPlayerCards(players, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const order = ['FL', 'FR', 'BL', 'BR'];
+  container.innerHTML = order.map(pos => {
+    const p = (players && players[pos]) ? players[pos] : {};
+    const name = p.name || pos;
+    const rating = parseFloat(p.rating) || 0;
+    const strengths = Array.isArray(p.strengths) ? p.strengths : [];
+    const improvements = Array.isArray(p.improvements) ? p.improvements : (Array.isArray(p.areas_to_improve) ? p.areas_to_improve : []);
+
+    const strengthItems = strengths.slice(0, 3).map(s =>
+      `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+    const improveItems = improvements.slice(0, 3).map(s =>
+      `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+
+    return `
+      <div class="player-card" data-pos="${pos}">
+        <div class="player-card-header">
+          <div class="player-card-name">${escHtml(name)}</div>
+          <div class="pos-badge">${pos}</div>
+        </div>
+        <div class="rating-ring-wrapper">${renderRatingRing(rating)}</div>
+        <div class="feedback-section strengths">
+          <h4>Strengths</h4>
+          <ul class="feedback-list">${strengthItems}</ul>
+        </div>
+        <div class="feedback-section improve">
+          <h4>Areas to Improve</h4>
+          <ul class="feedback-list">${improveItems}</ul>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function avg(arr) {
+  const nums = arr.map(v => parseFloat(v) || 0);
+  return nums.reduce((a, b) => a + b, 0) / (nums.length || 1);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ══════════════════════════════════════════════
+   SAVE TO HISTORY / ANALYZE ANOTHER
+══════════════════════════════════════════════ */
+document.getElementById('saveHistoryBtn').addEventListener('click', () => {
+  // Analysis was already saved server-side during /analyze.
+  // Just switch to history tab.
+  switchTab('history');
+});
+
+document.getElementById('analyzeAnotherBtn').addEventListener('click', resetAll);
+
+/* ══════════════════════════════════════════════
+   RESET
+══════════════════════════════════════════════ */
+function resetAll() {
+  // Clear state
+  state.selectedFile = null;
+  state.tempName = null;
+  state.filename = null;
+  state.players = { FL: '', FR: '', BL: '', BR: '' };
+  state.analysisResult = null;
+
+  // Reset file input
+  document.getElementById('videoFile').value = '';
+  document.getElementById('filePill').style.display = 'none';
+  document.getElementById('nextBtn').disabled = true;
+  document.getElementById('nextBtn').textContent = 'Next: Tag Players →';
+
+  // Reset player inputs
+  positions.forEach(pos => {
+    document.getElementById('court' + pos).value = '';
+    document.getElementById('input' + pos).value = '';
+    document.getElementById('courtName' + pos).textContent = '';
+    state.players[pos] = '';
+  });
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('analyzeBtn').textContent = 'Analyze Match 🎾';
+
+  // Reset results
+  document.getElementById('resultsGrid').innerHTML = '';
+  document.getElementById('teamScores').innerHTML = '';
+
+  hideProgress();
+
+  // Go back to step 1
+  goToStep(1);
+
+  // Switch to new analysis tab
+  switchTab('new-analysis');
+}
+
+/* ══════════════════════════════════════════════
+   MATCH HISTORY
+══════════════════════════════════════════════ */
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);">Loading…</div>';
+  try {
+    const res = await fetch('/history');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const matches = Array.isArray(data) ? data : (data.matches || []);
+    renderHistory(matches);
+  } catch (err) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>Failed to load history: ${escHtml(err.message)}</p></div>`;
+  }
+}
+
+function renderHistory(matches) {
+  const list = document.getElementById('historyList');
+  if (!matches || matches.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🎾</div>
+        <p>No matches yet. Analyze your first match!</p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = matches.map(m => buildHistoryCard(m)).join('');
+
+  // Attach expand/collapse and delete listeners
+  list.querySelectorAll('.history-header').forEach(header => {
+    header.addEventListener('click', e => {
+      if (e.target.closest('.btn-danger')) return; // don't toggle on delete click
+      const card = header.closest('.history-card');
+      const body = card.querySelector('.history-body');
+      const chevron = header.querySelector('.chevron');
+      const isOpen = body.classList.contains('open');
+      body.classList.toggle('open', !isOpen);
+      chevron.classList.toggle('open', !isOpen);
+    });
+  });
+
+  list.querySelectorAll('.delete-match-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!confirm('Delete this match from history?')) return;
+      try {
+        const res = await fetch(`/match/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const card = btn.closest('.history-card');
+        card.remove();
+        // Check if list is now empty
+        if (list.querySelectorAll('.history-card').length === 0) {
+          list.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">🎾</div>
+              <p>No matches yet. Analyze your first match!</p>
+            </div>`;
+        }
+      } catch (err) {
+        showToast('Failed to delete match: ' + err.message);
+      }
+    });
+  });
+}
+
+function buildHistoryCard(m) {
+  const players = m.players || {};
+  const fl = players.FL || {};
+  const fr = players.FR || {};
+  const bl = players.BL || {};
+  const br = players.BR || {};
+
+  const team1Avg = avg([fl.rating, fr.rating]);
+  const team2Avg = avg([bl.rating, br.rating]);
+  const playerNames = [fl.name, fr.name, bl.name, br.name].filter(Boolean).join(', ');
+
+  // Build inner player cards HTML (reuse renderPlayerCards logic inline)
+  const order = ['FL', 'FR', 'BL', 'BR'];
+  const cardsHtml = order.map(pos => {
+    const p = players[pos] || {};
+    const name = p.name || pos;
+    const rating = parseFloat(p.rating) || 0;
+    const strengths = Array.isArray(p.strengths) ? p.strengths : [];
+    const improvements = Array.isArray(p.improvements) ? p.improvements : (Array.isArray(p.areas_to_improve) ? p.areas_to_improve : []);
+    const strengthItems = strengths.slice(0, 3).map(s => `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+    const improveItems  = improvements.slice(0, 3).map(s => `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+    return `
+      <div class="player-card">
+        <div class="player-card-header">
+          <div class="player-card-name">${escHtml(name)}</div>
+          <div class="pos-badge">${pos}</div>
+        </div>
+        <div class="rating-ring-wrapper">${renderRatingRing(rating)}</div>
+        <div class="feedback-section strengths">
+          <h4>Strengths</h4>
+          <ul class="feedback-list">${strengthItems}</ul>
+        </div>
+        <div class="feedback-section improve">
+          <h4>Areas to Improve</h4>
+          <ul class="feedback-list">${improveItems}</ul>
+        </div>
+      </div>`;
+  }).join('');
+
+  const matchId = m.id || m._id || '';
+
+  return `
+    <div class="history-card" data-id="${escHtml(String(matchId))}">
+      <div class="history-header" role="button" tabindex="0"
+           aria-expanded="false" aria-label="Match from ${escHtml(formatDate(m.date || m.created_at))}">
+        <div class="history-meta">
+          <div class="history-date">${escHtml(formatDate(m.date || m.created_at))}</div>
+          <div class="history-filename">${escHtml(m.filename || 'Unknown file')}</div>
+          <div class="history-scores">Team 1: ${team1Avg.toFixed(1)} &nbsp;|&nbsp; Team 2: ${team2Avg.toFixed(1)}</div>
+          <div class="history-players">${escHtml(playerNames)}</div>
+        </div>
+        <div class="history-actions">
+          <button class="btn btn-danger delete-match-btn"
+                  data-id="${escHtml(String(matchId))}"
+                  style="padding:0.35rem 0.7rem; font-size:0.8rem;"
+                  aria-label="Delete match">🗑 Delete</button>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+      </div>
+      <div class="history-body">
+        <div style="margin-top:1rem;">
+          <div class="match-summary" style="margin-bottom:1rem;">
+            <div class="summary-text">Match Analysis</div>
+            <div class="team-scores">
+              <div class="team-score-item ${team1Avg >= team2Avg ? 'winner' : ''}">
+                Team 1 (${escHtml((fl.name||'FL') + ' + ' + (fr.name||'FR'))}): ${team1Avg.toFixed(1)} avg
+              </div>
+              <div class="vs-divider">vs</div>
+              <div class="team-score-item ${team2Avg > team1Avg ? 'winner' : ''}">
+                Team 2 (${escHtml((bl.name||'BL') + ' + ' + (br.name||'BR'))}): ${team2Avg.toFixed(1)} avg
+              </div>
+            </div>
+          </div>
+          <div class="player-cards-grid">${cardsHtml}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Keyboard accessibility for history cards
+document.getElementById('historyList').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    const header = e.target.closest('.history-header');
+    if (header) header.click();
+  }
+});
+
+document.getElementById('refreshHistoryBtn').addEventListener('click', loadHistory);
+
+/* ══════════════════════════════════════════════
+   HEALTH CHECK ON PAGE LOAD
+══════════════════════════════════════════════ */
+async function checkHealth() {
+  try {
+    const res = await fetch('/health');
+    if (!res.ok) return;
+    const data = await res.json();
+    const banner = document.getElementById('key-warning');
+    if (data.gemini_key_configured === false) {
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch {
+    // Silently ignore — server may not be running yet
+  }
+}
+
+/* ══════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════ */
+(function init() {
+  goToStep(1);
+  checkHealth();
+})();
+</script>
+</body>
+</html>
