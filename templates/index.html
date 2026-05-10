@@ -32,6 +32,22 @@ body {
 
 a { color: var(--accent2); }
 
+/* ── Yes We Can Banner ── */
+.ywc-banner {
+  background: linear-gradient(135deg, #6c63ff 0%, #a78bfa 50%, #22c55e 100%);
+  text-align: center;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(108,99,255,0.4);
+}
+
 /* ── Header ── */
 .header {
   text-align: center;
@@ -623,10 +639,15 @@ a { color: var(--accent2); }
 </head>
 <body>
 
+<!-- Yes We Can Banner -->
+<div class="ywc-banner" role="banner" aria-label="Yes We Can">
+  🎾 &nbsp; Yes We Can &nbsp; 🎾
+</div>
+
 <!-- ══════════════════════════════════════════════
      HEADER
 ══════════════════════════════════════════════ -->
-<div class="header">
+<div class="header" style="margin-top:1.5rem;">
   <h1>Tennis Doubles <span>Match Analyzer</span></h1>
   <p>AI-powered coaching feedback for all 4 players</p>
 </div>
@@ -1180,19 +1201,58 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
 /* ══════════════════════════════════════════════
    RENDER RESULTS
 ══════════════════════════════════════════════ */
+
+/**
+ * Gemini returns players as a LIST: [{name, position, overall_rating, ...}]
+ * The UI needs a DICT keyed by position: {FL: {...}, FR: {...}, ...}
+ * This function handles both formats.
+ */
+function normalizePlayers(raw) {
+  if (!raw) return {};
+  // Already a dict keyed by position
+  if (!Array.isArray(raw) && typeof raw === 'object') {
+    // Could be {FL: {...}} or {players: [...]}
+    if (raw.FL || raw.FR || raw.BL || raw.BR) return raw;
+  }
+  // It's a list — convert to dict
+  const list = Array.isArray(raw) ? raw : [];
+  const dict = {};
+  list.forEach(p => {
+    const pos = (p.position || '').toUpperCase();
+    if (pos) {
+      dict[pos] = {
+        name: p.name,
+        // Gemini uses overall_rating; normalise to rating for the UI
+        rating: p.overall_rating ?? p.rating ?? 0,
+        strengths: p.strengths || [],
+        improvements: p.improvements || p.areas_to_improve || [],
+      };
+    }
+  });
+  return dict;
+}
+
 function renderResults(data) {
-  // Match summary
-  const players = data.players || {};
+  // Normalise players list → dict keyed by position
+  const players = normalizePlayers(data.players);
+
   const fl = players.FL || {};
   const fr = players.FR || {};
   const bl = players.BL || {};
   const br = players.BR || {};
 
-  const team1Avg = avg([fl.rating, fr.rating]);
-  const team2Avg = avg([bl.rating, br.rating]);
+  // Use team scores from Gemini if available, else calculate from player ratings
+  const team1Avg = parseFloat(data.team1_score) || avg([fl.rating, fr.rating]);
+  const team2Avg = parseFloat(data.team2_score) || avg([bl.rating, br.rating]);
   const team1Name = `${fl.name || 'FL'} + ${fr.name || 'FR'}`;
   const team2Name = `${bl.name || 'BL'} + ${br.name || 'BR'}`;
   const team1Wins = team1Avg >= team2Avg;
+
+  // Show match summary if available
+  const summaryEl = document.querySelector('#matchSummary .summary-text');
+  if (summaryEl && data.match_summary) {
+    summaryEl.textContent = data.match_summary;
+  }
 
   document.getElementById('teamScores').innerHTML = `
     <div class="team-score-item ${team1Wins ? 'winner' : ''}">
@@ -1210,7 +1270,7 @@ function renderResults(data) {
 
 /**
  * Renders a 2x2 grid of player cards into the given container.
- * Order: FL (top-left), FR (top-right), BL (bottom-left), BR (bottom-right)
+ * Expects players as a dict: {FL: {name, rating, strengths, improvements}, ...}
  */
 function renderPlayerCards(players, containerId) {
   const container = document.getElementById(containerId);
@@ -1219,14 +1279,16 @@ function renderPlayerCards(players, containerId) {
   container.innerHTML = order.map(pos => {
     const p = (players && players[pos]) ? players[pos] : {};
     const name = p.name || pos;
-    const rating = parseFloat(p.rating) || 0;
-    const strengths = Array.isArray(p.strengths) ? p.strengths : [];
-    const improvements = Array.isArray(p.improvements) ? p.improvements : (Array.isArray(p.areas_to_improve) ? p.areas_to_improve : []);
+    // Support both overall_rating (raw Gemini) and rating (normalised)
+    const rating = parseFloat(p.overall_rating ?? p.rating) || 0;
+    const strengths    = Array.isArray(p.strengths)    ? p.strengths    : [];
+    const improvements = Array.isArray(p.improvements) ? p.improvements
+                       : Array.isArray(p.areas_to_improve) ? p.areas_to_improve : [];
 
     const strengthItems = strengths.slice(0, 3).map(s =>
-      `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+      `<li>${escHtml(s)}</li>`).join('') || '<li>No data available</li>';
     const improveItems = improvements.slice(0, 3).map(s =>
-      `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
+      `<li>${escHtml(s)}</li>`).join('') || '<li>No data available</li>';
 
     return `
       <div class="player-card" data-pos="${pos}">
@@ -1381,14 +1443,14 @@ function renderHistory(matches) {
 }
 
 function buildHistoryCard(m) {
-  const players = m.players || {};
+  const players = normalizePlayers(m.players);
   const fl = players.FL || {};
   const fr = players.FR || {};
   const bl = players.BL || {};
   const br = players.BR || {};
 
-  const team1Avg = avg([fl.rating, fr.rating]);
-  const team2Avg = avg([bl.rating, br.rating]);
+  const team1Avg = parseFloat(m.team1_score) || avg([fl.rating, fr.rating]);
+  const team2Avg = parseFloat(m.team2_score) || avg([bl.rating, br.rating]);
   const playerNames = [fl.name, fr.name, bl.name, br.name].filter(Boolean).join(', ');
 
   // Build inner player cards HTML (reuse renderPlayerCards logic inline)
@@ -1396,9 +1458,10 @@ function buildHistoryCard(m) {
   const cardsHtml = order.map(pos => {
     const p = players[pos] || {};
     const name = p.name || pos;
-    const rating = parseFloat(p.rating) || 0;
-    const strengths = Array.isArray(p.strengths) ? p.strengths : [];
-    const improvements = Array.isArray(p.improvements) ? p.improvements : (Array.isArray(p.areas_to_improve) ? p.areas_to_improve : []);
+    const rating = parseFloat(p.overall_rating ?? p.rating) || 0;
+    const strengths    = Array.isArray(p.strengths)    ? p.strengths    : [];
+    const improvements = Array.isArray(p.improvements) ? p.improvements
+                       : Array.isArray(p.areas_to_improve) ? p.areas_to_improve : [];
     const strengthItems = strengths.slice(0, 3).map(s => `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
     const improveItems  = improvements.slice(0, 3).map(s => `<li>${escHtml(s)}</li>`).join('') || '<li>No data</li>';
     return `
