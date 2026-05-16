@@ -332,6 +332,57 @@
         .error-msg.visible {
             display: block;
         }
+
+        /* Upload fallback */
+        .upload-fallback {
+            display: none;
+            text-align: center;
+            padding: 24px 16px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .upload-fallback.visible {
+            display: block;
+        }
+
+        .upload-fallback p {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .upload-label {
+            display: block;
+            width: 100%;
+            max-width: 400px;
+            margin: 12px auto;
+            padding: 16px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: 2px dashed #e94560;
+            border-radius: 12px;
+            cursor: pointer;
+            text-align: center;
+            color: #e94560;
+            background: transparent;
+            transition: all 0.2s;
+        }
+
+        .upload-label:hover {
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .upload-input {
+            display: none;
+        }
+
+        .or-divider {
+            color: #666;
+            font-size: 0.85rem;
+            margin: 16px 0;
+        }
     </style>
 </head>
 <body>
@@ -355,6 +406,16 @@
         <div class="timer" id="recordTimer">0.0s</div>
         <button class="record-btn" id="recordBtn" disabled></button>
         <p class="status-text" id="cameraStatus">Initializing camera...</p>
+
+        <div class="or-divider" id="orDivider" style="display:none;">- or -</div>
+
+        <div class="upload-fallback" id="uploadFallback">
+            <p>Camera unavailable? Upload a video of the ball landing instead.</p>
+            <label class="upload-label" for="videoUpload">
+                📁 Upload Video File
+            </label>
+            <input type="file" id="videoUpload" class="upload-input" accept="video/*">
+        </div>
     </div>
 
     <!-- Frame Review View -->
@@ -470,9 +531,18 @@
             if (typeof MediaRecorder === 'undefined') {
                 recordBtn.disabled = true;
                 cameraStatus.textContent = 'Your browser does not support video recording (MediaRecorder). Please use a modern browser such as Chrome, Firefox, or Safari 14.3+.';
+                showUploadFallback();
                 return;
             }
 
+            // Check if getUserMedia is available
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                cameraStatus.textContent = 'Camera API not available. This may require HTTPS.';
+                showUploadFallback();
+                return;
+            }
+
+            // Try with rear-facing camera first
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -481,10 +551,58 @@
                 videoPreview.srcObject = mediaStream;
                 recordBtn.disabled = false;
                 cameraStatus.textContent = 'Tap to record ball landing';
+                showUploadOption();
+                return;
             } catch (err) {
-                cameraStatus.textContent = 'Camera access denied. Please allow camera access.';
-                showError('Unable to access camera: ' + err.message);
+                console.warn('Rear camera failed, trying any camera:', err.message);
             }
+
+            // Fallback: try with any camera (no facingMode constraint)
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                videoPreview.srcObject = mediaStream;
+                recordBtn.disabled = false;
+                cameraStatus.textContent = 'Tap to record ball landing';
+                showUploadOption();
+                return;
+            } catch (err) {
+                console.warn('Any camera failed, trying basic video:', err.message);
+            }
+
+            // Last resort: simplest possible constraints
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                videoPreview.srcObject = mediaStream;
+                recordBtn.disabled = false;
+                cameraStatus.textContent = 'Tap to record ball landing';
+                showUploadOption();
+                return;
+            } catch (err) {
+                console.error('All camera attempts failed:', err.message);
+                cameraStatus.textContent = 'Unable to access camera.';
+                showUploadFallback();
+            }
+        }
+
+        // Show upload as the primary fallback when camera fails
+        function showUploadFallback() {
+            const uploadFallback = document.getElementById('uploadFallback');
+            uploadFallback.classList.add('visible');
+            uploadFallback.querySelector('p').textContent =
+                'Camera is not available. You can upload a video file of the ball landing instead.';
+        }
+
+        // Show upload as an additional option when camera works
+        function showUploadOption() {
+            const uploadFallback = document.getElementById('uploadFallback');
+            const orDivider = document.getElementById('orDivider');
+            uploadFallback.classList.add('visible');
+            orDivider.style.display = 'block';
+            uploadFallback.querySelector('p').textContent =
+                'You can also upload a video file instead of recording.';
         }
 
         // Recording
@@ -719,6 +837,31 @@
                 showError('Failed to delete call');
             }
         }
+
+        // Video file upload handler
+        document.getElementById('videoUpload').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('video/')) {
+                showError('Please select a video file.');
+                return;
+            }
+
+            cameraStatus.textContent = 'Processing uploaded video...';
+            recordBtn.disabled = true;
+
+            try {
+                await extractFramesFromBlob(file);
+            } catch (err) {
+                showError('Failed to process video: ' + err.message);
+                cameraStatus.textContent = 'Upload failed. Please try another video.';
+                recordBtn.disabled = !mediaStream;
+            }
+
+            // Reset the file input so the same file can be re-selected
+            event.target.value = '';
+        });
 
         // Init
         initCamera();
