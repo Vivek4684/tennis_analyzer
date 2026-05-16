@@ -1,18 +1,17 @@
 """
-Tennis Doubles Match Analyzer — Flask backend
+Tennis Ball In/Out Detector - Flask backend
 Run locally:  python app.py
 Deploy:       gunicorn app:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT
 """
 
+import base64
 import os
-import tempfile
-import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
-from database import delete_match, get_all_matches, get_match, init_db, save_match
-from gemini_client import analyze_match, delete_file, upload_video
+from database import delete_call, get_all_calls, init_db, save_call
+from gemini_client import analyze_frames
 
 try:
     from dotenv import load_dotenv
@@ -21,17 +20,7 @@ except ImportError:
     pass
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
-
-UPLOAD_DIR = Path(tempfile.gettempdir()) / "tennis_uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-ALLOWED_VIDEO = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
-
-
-def allowed_video(filename: str) -> bool:
-    return Path(filename).suffix.lower() in ALLOWED_VIDEO
-
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
 # Initialise DB on startup
 with app.app_context():
@@ -61,105 +50,65 @@ def health():
     })
 
 
-@app.route("/upload", methods=["POST"])
-def upload():
-    """Save uploaded video to /tmp and return a temp filename."""
-    if "video" not in request.files:
-        return jsonify({"error": "No video file provided."}), 400
-
-    f = request.files["video"]
-    if not f.filename:
-        return jsonify({"error": "Empty filename."}), 400
-    if not allowed_video(f.filename):
-        return jsonify({"error": "Unsupported format. Use MP4, MOV, AVI, MKV, or WEBM."}), 400
-
-    uid = uuid.uuid4().hex
-    ext = Path(f.filename).suffix.lower()
-    save_path = UPLOAD_DIR / f"{uid}{ext}"
-    f.save(str(save_path))
-
-    size_mb = round(save_path.stat().st_size / (1024 * 1024), 1)
-    return jsonify({
-        "filename": f.filename,
-        "temp_name": save_path.name,
-        "size_mb": size_mb,
-    })
-
-
 @app.route("/analyze", methods=["POST"])
 def analyze():
     """
-    Full pipeline:
-      1. Upload video to Gemini File API
-      2. Wait for processing
-      3. Analyze with Gemini
-      4. Delete from File API + local disk
-      5. Save to DB
-      6. Return results
+    Accepts JSON with 'frames' array of base64-encoded JPEG strings.
+    Validates frames, sends to Gemini for analysis, saves result.
     """
     data = request.get_json()
     if not data:
         return jsonify({"error": "JSON body required."}), 400
 
-    temp_name = data.get("temp_name")
-    players   = data.get("players", {})
-    original_filename = data.get("filename", temp_name or "unknown")
+    frames = data.get("frames")
+    if not frames or not isinstance(frames, list):
+        return jsonify({"error": "A 'frames' array is required."}), 400
 
-    required_positions = {"FL", "FR", "BL", "BR"}
-    if not all(players.get(p, "").strip() for p in required_positions):
-        return jsonify({"error": "All 4 player names (FL, FR, BL, BR) are required."}), 400
+    if len(frames) < 1 or len(frames) > 10:
+        return jsonify({"error": "Must provide between 1 and 10 frames."}), 400
 
-    if not temp_name:
-        return jsonify({"error": "temp_name is required."}), 400
+    # Validate base64 encoding
+    validated_frames = []
+    for i, frame in enumerate(frames):
+        if not isinstance(frame, str) or not frame.strip():
+            return jsonify({"error": f"Frame {i} is not a valid base64 string."}), 400
+        # Strip data URL prefix if present
+        clean = frame
+        if "," in clean and clean.startswith("data:"):
+            clean = clean.split(",", 1)[1]
+        try:
+            base64.b64decode(clean, validate=True)
+        except Exception:
+            return jsonify({"error": f"Frame {i} is not valid base64."}), 400
+        validated_frames.append(clean)
 
-    video_path = UPLOAD_DIR / temp_name
-    if not video_path.exists():
-        return jsonify({"error": "Video file not found. Please re-upload."}), 400
-
-    file_name = None
     try:
-        # 1. Upload to Gemini File API
-        file_name = upload_video(str(video_path))
-
-        # 2. Analyze
-        analysis = analyze_match(file_name, players)
-
-        # 3. Save to DB
-        match_id = save_match(original_filename, analysis)
-        analysis["match_id"] = match_id
-
-        return jsonify(analysis)
-
+        result = analyze_frames(validated_frames)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 500
 
-    finally:
-        # Always clean up — File API and local disk
-        if file_name:
-            delete_file(file_name)
-        try:
-            video_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+    # Save to database
+    call_id = save_call(
+        result_in_pct=result["percentage_in"],
+        result_out_pct=result["percentage_out"],
+        confidence=result["confidence"],
+        explanation=result["explanation"],
+        num_frames=len(validated_frames),
+    )
+    result["id"] = call_id
+
+    return jsonify(result)
 
 
 @app.route("/history")
 def history():
-    return jsonify(get_all_matches())
+    return jsonify(get_all_calls())
 
 
-@app.route("/match/<int:match_id>", methods=["GET"])
-def get_match_route(match_id):
-    m = get_match(match_id)
-    if not m:
-        return jsonify({"error": "Match not found."}), 404
-    return jsonify(m)
-
-
-@app.route("/match/<int:match_id>", methods=["DELETE"])
-def delete_match_route(match_id):
-    delete_match(match_id)
-    return jsonify({"deleted": match_id})
+@app.route("/call/<int:call_id>", methods=["DELETE"])
+def delete_call_route(call_id):
+    delete_call(call_id)
+    return jsonify({"deleted": call_id})
 
 
 if __name__ == "__main__":

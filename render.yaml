@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tennis-match-analyzer
+    name: tennis-ball-inout
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT
@@ -10,6 +10,6 @@ services:
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: DB_PATH
-        value: /tmp/tennis_matches.db
+        value: /tmp/tennis_calls.db
       - key: PYTHON_VERSION
         value: "3.11.9"
