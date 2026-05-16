@@ -332,6 +332,57 @@
         .error-msg.visible {
             display: block;
         }
+
+        /* Upload fallback */
+        .upload-fallback {
+            display: none;
+            text-align: center;
+            padding: 24px 16px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .upload-fallback.visible {
+            display: block;
+        }
+
+        .upload-fallback p {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .upload-label {
+            display: block;
+            width: 100%;
+            max-width: 400px;
+            margin: 12px auto;
+            padding: 16px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: 2px dashed #e94560;
+            border-radius: 12px;
+            cursor: pointer;
+            text-align: center;
+            color: #e94560;
+            background: transparent;
+            transition: all 0.2s;
+        }
+
+        .upload-label:hover {
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .upload-input {
+            display: none;
+        }
+
+        .or-divider {
+            color: #666;
+            font-size: 0.85rem;
+            margin: 16px 0;
+        }
     </style>
 </head>
 <body>
@@ -355,11 +406,30 @@
         <div class="timer" id="recordTimer">0.0s</div>
         <button class="record-btn" id="recordBtn" disabled></button>
         <p class="status-text" id="cameraStatus">Initializing camera...</p>
+
+        <div style="text-align:center;margin-top:12px;">
+            <label style="color:#aaa;font-size:0.85rem;margin-right:8px;">Shot type:</label>
+            <select id="shotTypeSelect" style="background:#16213e;color:#eee;border:1px solid #0f3460;border-radius:8px;padding:6px 12px;font-size:0.9rem;">
+                <option value="rally">Rally (baseline/sidelines)</option>
+                <option value="serve">Serve (service box)</option>
+            </select>
+        </div>
+
+        <div class="or-divider" id="orDivider" style="display:none;">- or -</div>
+
+        <div class="upload-fallback" id="uploadFallback">
+            <p>Camera unavailable? Upload a video of the ball landing instead.</p>
+            <label class="upload-label" for="videoUpload">
+                &#x1F4C1; Upload Video File
+            </label>
+            <input type="file" id="videoUpload" class="upload-input" accept="video/*">
+        </div>
     </div>
 
     <!-- Frame Review View -->
     <div class="view" id="frameReviewView">
         <h2 style="text-align:center;margin-bottom:12px;font-size:1.1rem;">Review Frames</h2>
+        <p id="frameReviewStatus" style="text-align:center;color:#aaa;font-size:0.85rem;margin-bottom:12px;"></p>
         <div class="frames-grid" id="framesGrid"></div>
         <button class="action-btn btn-primary" id="analyzeBtn">Analyze Ball Position</button>
         <button class="action-btn btn-secondary" id="retakeBtn">Retake</button>
@@ -369,7 +439,7 @@
     <div class="view" id="resultsView">
         <div class="loading" id="loadingIndicator">
             <div class="spinner"></div>
-            <p>Analyzing frames with Gemini AI...</p>
+            <p id="loadingText">Analyzing frames with Gemini AI...</p>
         </div>
         <div id="resultContent" style="display:none;">
             <div class="result-card">
@@ -402,6 +472,7 @@
         let isRecording = false;
         let recordStartTime = 0;
         let timerInterval = null;
+        const MAX_RECORD_SECONDS = 120; // 2 minutes
 
         // DOM elements
         const videoPreview = document.getElementById('videoPreview');
@@ -412,6 +483,7 @@
         const analyzeBtn = document.getElementById('analyzeBtn');
         const retakeBtn = document.getElementById('retakeBtn');
         const loadingIndicator = document.getElementById('loadingIndicator');
+        const loadingText = document.getElementById('loadingText');
         const resultContent = document.getElementById('resultContent');
         const resultVerdict = document.getElementById('resultVerdict');
         const resultPercentage = document.getElementById('resultPercentage');
@@ -420,6 +492,8 @@
         const newCallBtn = document.getElementById('newCallBtn');
         const historyList = document.getElementById('historyList');
         const errorMsg = document.getElementById('errorMsg');
+        const frameReviewStatus = document.getElementById('frameReviewStatus');
+        const shotTypeSelect = document.getElementById('shotTypeSelect');
 
         // Navigation
         document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -470,9 +544,18 @@
             if (typeof MediaRecorder === 'undefined') {
                 recordBtn.disabled = true;
                 cameraStatus.textContent = 'Your browser does not support video recording (MediaRecorder). Please use a modern browser such as Chrome, Firefox, or Safari 14.3+.';
+                showUploadFallback();
                 return;
             }
 
+            // Check if getUserMedia is available
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                cameraStatus.textContent = 'Camera API not available. This may require HTTPS.';
+                showUploadFallback();
+                return;
+            }
+
+            // Try with rear-facing camera first
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -480,11 +563,59 @@
                 });
                 videoPreview.srcObject = mediaStream;
                 recordBtn.disabled = false;
-                cameraStatus.textContent = 'Tap to record ball landing';
+                cameraStatus.textContent = 'Tap to record (up to 2 min). Tap again to stop.';
+                showUploadOption();
+                return;
             } catch (err) {
-                cameraStatus.textContent = 'Camera access denied. Please allow camera access.';
-                showError('Unable to access camera: ' + err.message);
+                console.warn('Rear camera failed, trying any camera:', err.message);
             }
+
+            // Fallback: try with any camera (no facingMode constraint)
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                videoPreview.srcObject = mediaStream;
+                recordBtn.disabled = false;
+                cameraStatus.textContent = 'Tap to record (up to 2 min). Tap again to stop.';
+                showUploadOption();
+                return;
+            } catch (err) {
+                console.warn('Any camera failed, trying basic video:', err.message);
+            }
+
+            // Last resort: simplest possible constraints
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                videoPreview.srcObject = mediaStream;
+                recordBtn.disabled = false;
+                cameraStatus.textContent = 'Tap to record (up to 2 min). Tap again to stop.';
+                showUploadOption();
+                return;
+            } catch (err) {
+                console.error('All camera attempts failed:', err.message);
+                cameraStatus.textContent = 'Unable to access camera.';
+                showUploadFallback();
+            }
+        }
+
+        // Show upload as the primary fallback when camera fails
+        function showUploadFallback() {
+            const uploadFallback = document.getElementById('uploadFallback');
+            uploadFallback.classList.add('visible');
+            uploadFallback.querySelector('p').textContent =
+                'Camera is not available. You can upload a video file of the ball landing instead.';
+        }
+
+        // Show upload as an additional option when camera works
+        function showUploadOption() {
+            const uploadFallback = document.getElementById('uploadFallback');
+            const orDivider = document.getElementById('orDivider');
+            uploadFallback.classList.add('visible');
+            orDivider.style.display = 'block';
+            uploadFallback.querySelector('p').textContent =
+                'You can also upload a video file instead of recording.';
         }
 
         // Recording
@@ -515,22 +646,22 @@
 
             mediaRecorder.onstop = () => {
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                extractFramesFromBlob(blob);
+                processVideoWithAgent(blob);
             };
 
             mediaRecorder.start(100);
             isRecording = true;
             recordBtn.classList.add('recording');
-            cameraStatus.textContent = 'Recording... tap to stop';
+            cameraStatus.textContent = 'Recording... tap to stop (max 2 min)';
             recordStartTime = Date.now();
             recordTimer.classList.add('visible');
             updateTimer();
             timerInterval = setInterval(updateTimer, 100);
 
-            // Auto-stop after 3 seconds
+            // Auto-stop after 2 minutes
             setTimeout(() => {
                 if (isRecording) stopRecording();
-            }, 3000);
+            }, MAX_RECORD_SECONDS * 1000);
         }
 
         function stopRecording() {
@@ -539,7 +670,7 @@
             }
             isRecording = false;
             recordBtn.classList.remove('recording');
-            cameraStatus.textContent = 'Processing...';
+            cameraStatus.textContent = 'Processing video...';
             recordTimer.classList.remove('visible');
             clearInterval(timerInterval);
         }
@@ -549,8 +680,10 @@
             recordTimer.textContent = elapsed + 's';
         }
 
-        // Frame extraction
-        async function extractFramesFromBlob(blob) {
+        // Two-step agent flow: detect ball contact point, then extract 5-second window
+        async function processVideoWithAgent(blob) {
+            cameraStatus.textContent = 'Agent analyzing video for ball contact...';
+
             const hiddenVideo = document.getElementById('hiddenVideo');
             const canvas = document.getElementById('hiddenCanvas');
             const ctx = canvas.getContext('2d');
@@ -570,26 +703,93 @@
             });
 
             const duration = hiddenVideo.duration;
-            const numFrames = 5;
-            extractedFrames = [];
-
             canvas.width = hiddenVideo.videoWidth || 640;
             canvas.height = hiddenVideo.videoHeight || 480;
 
-            for (let i = 0; i < numFrames; i++) {
-                const time = (duration / (numFrames + 1)) * (i + 1);
-                hiddenVideo.currentTime = time;
-                await new Promise(resolve => {
-                    hiddenVideo.onseeked = resolve;
-                });
-                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                const base64 = dataUrl.split(',')[1];
-                extractedFrames.push(base64);
+            // For short videos (under 6 seconds), skip agent detection
+            // and just extract 5 evenly-spaced frames directly
+            if (duration <= 6) {
+                extractedFrames = await extractFramesInRange(hiddenVideo, canvas, ctx, 0, duration, 5);
+                URL.revokeObjectURL(url);
+                frameReviewStatus.textContent = 'Short video - extracted 5 frames for analysis.';
+                showFrameReview();
+                return;
             }
 
+            // Step 1: Sample 8 evenly-spaced frames for agent detection
+            const numSampleFrames = 8;
+            const sampleFrames = [];
+            const sampleTimes = [];
+
+            for (let i = 0; i < numSampleFrames; i++) {
+                const time = (duration / (numSampleFrames + 1)) * (i + 1);
+                sampleTimes.push(time);
+                hiddenVideo.currentTime = time;
+                await new Promise(resolve => { hiddenVideo.onseeked = resolve; });
+                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                sampleFrames.push(dataUrl.split(',')[1]);
+            }
+
+            cameraStatus.textContent = 'Agent detecting ball-ground contact...';
+
+            // Send sampled frames to agent endpoint
+            let contactIndex = Math.floor(numSampleFrames / 2); // default to middle
+            let agentDescription = '';
+            try {
+                const resp = await fetch('/detect-contact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ frames: sampleFrames })
+                });
+                const contactData = await resp.json();
+
+                if (resp.ok && contactData.contact_frame_index !== undefined) {
+                    contactIndex = contactData.contact_frame_index;
+                    agentDescription = contactData.description || '';
+                }
+            } catch (err) {
+                console.warn('Agent detection failed, using middle frame:', err);
+            }
+
+            // Step 2: Extract frames from 5-second window around contact point
+            const contactTime = sampleTimes[contactIndex];
+            const windowStart = Math.max(0, contactTime - 2.5);
+            const windowEnd = Math.min(duration, contactTime + 2.5);
+
+            cameraStatus.textContent = 'Extracting frames around ball contact...';
+
+            extractedFrames = await extractFramesInRange(hiddenVideo, canvas, ctx, windowStart, windowEnd, 5);
+
             URL.revokeObjectURL(url);
+
+            const statusMsg = agentDescription
+                ? 'Ball contact detected at ' + contactTime.toFixed(1) + 's: ' + agentDescription
+                : 'Frames extracted from 5-second window around detected contact at ' + contactTime.toFixed(1) + 's.';
+            frameReviewStatus.textContent = statusMsg;
             showFrameReview();
+        }
+
+        // Extract N evenly-spaced frames from a time range
+        async function extractFramesInRange(video, canvas, ctx, startTime, endTime, numFrames) {
+            const frames = [];
+            const rangeDuration = endTime - startTime;
+
+            for (let i = 0; i < numFrames; i++) {
+                const time = startTime + (rangeDuration / (numFrames + 1)) * (i + 1);
+                video.currentTime = time;
+                await new Promise(resolve => { video.onseeked = resolve; });
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                frames.push(dataUrl.split(',')[1]);
+            }
+
+            return frames;
+        }
+
+        // Legacy function for upload fallback (uses same agent flow)
+        async function extractFramesFromBlob(blob) {
+            await processVideoWithAgent(blob);
         }
 
         function showFrameReview() {
@@ -602,20 +802,23 @@
                 framesGrid.appendChild(img);
             });
             switchToView('frameReview');
-            cameraStatus.textContent = 'Tap to record ball landing';
+            cameraStatus.textContent = 'Tap to record (up to 2 min). Tap again to stop.';
         }
 
         // Analyze
         analyzeBtn.addEventListener('click', async () => {
             switchToView('results');
             loadingIndicator.classList.add('visible');
+            loadingText.textContent = 'Analyzing ball position with Gemini AI...';
             resultContent.style.display = 'none';
+
+            const shotType = shotTypeSelect.value;
 
             try {
                 const resp = await fetch('/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ frames: extractedFrames })
+                    body: JSON.stringify({ frames: extractedFrames, shot_type: shotType })
                 });
                 const data = await resp.json();
 
@@ -650,7 +853,7 @@
 
             resultVerdict.textContent = verdict;
             resultVerdict.className = 'result-verdict ' + verdictClass;
-            resultPercentage.textContent = `IN: ${pctIn.toFixed(1)}% | OUT: ${pctOut.toFixed(1)}%`;
+            resultPercentage.textContent = 'IN: ' + pctIn.toFixed(1) + '% | OUT: ' + pctOut.toFixed(1) + '%';
 
             resultConfidence.textContent = data.confidence;
             resultConfidence.className = 'result-confidence confidence-' + data.confidence;
@@ -696,15 +899,13 @@
                     if (pctIn >= 60) { color = '#4caf50'; label = 'IN'; }
                     else if (pctOut >= 60) { color = '#f44336'; label = 'OUT'; }
 
-                    return `
-                        <div class="history-item">
-                            <div>
-                                <div class="history-result" style="color:${color}">${label} (${pctIn.toFixed(0)}%/${pctOut.toFixed(0)}%)</div>
-                                <div class="history-meta">${escapeHtml(call.created_at)} | ${call.num_frames} frames | ${escapeHtml(call.confidence)} confidence</div>
-                            </div>
-                            <button class="history-delete" onclick="deleteCall(${call.id})">&#x2715;</button>
-                        </div>
-                    `;
+                    return '<div class="history-item">' +
+                        '<div>' +
+                        '<div class="history-result" style="color:' + color + '">' + label + ' (' + pctIn.toFixed(0) + '%/' + pctOut.toFixed(0) + '%)</div>' +
+                        '<div class="history-meta">' + escapeHtml(call.created_at) + ' | ' + call.num_frames + ' frames | ' + escapeHtml(call.confidence) + ' confidence</div>' +
+                        '</div>' +
+                        '<button class="history-delete" onclick="deleteCall(' + call.id + ')">&#x2715;</button>' +
+                        '</div>';
                 }).join('');
             } catch (err) {
                 showError('Failed to load history');
@@ -719,6 +920,31 @@
                 showError('Failed to delete call');
             }
         }
+
+        // Video file upload handler
+        document.getElementById('videoUpload').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('video/')) {
+                showError('Please select a video file.');
+                return;
+            }
+
+            cameraStatus.textContent = 'Processing uploaded video...';
+            recordBtn.disabled = true;
+
+            try {
+                await extractFramesFromBlob(file);
+            } catch (err) {
+                showError('Failed to process video: ' + err.message);
+                cameraStatus.textContent = 'Upload failed. Please try another video.';
+                recordBtn.disabled = !mediaStream;
+            }
+
+            // Reset the file input so the same file can be re-selected
+            event.target.value = '';
+        });
 
         // Init
         initCamera();
