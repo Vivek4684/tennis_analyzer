@@ -466,6 +466,13 @@
 
         // Initialize camera
         async function initCamera() {
+            // Check for MediaRecorder support
+            if (typeof MediaRecorder === 'undefined') {
+                recordBtn.disabled = true;
+                cameraStatus.textContent = 'Your browser does not support video recording (MediaRecorder). Please use a modern browser such as Chrome, Firefox, or Safari 14.3+.';
+                return;
+            }
+
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -663,6 +670,13 @@
             switchToView('camera');
         });
 
+        // Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         // History
         async function loadHistory() {
             try {
@@ -686,7 +700,7 @@
                         <div class="history-item">
                             <div>
                                 <div class="history-result" style="color:${color}">${label} (${pctIn.toFixed(0)}%/${pctOut.toFixed(0)}%)</div>
-                                <div class="history-meta">${call.created_at} | ${call.num_frames} frames | ${call.confidence} confidence</div>
+                                <div class="history-meta">${escapeHtml(call.created_at)} | ${call.num_frames} frames | ${escapeHtml(call.confidence)} confidence</div>
                             </div>
                             <button class="history-delete" onclick="deleteCall(${call.id})">&#x2715;</button>
                         </div>

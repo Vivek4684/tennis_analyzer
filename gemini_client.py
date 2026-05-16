@@ -86,13 +86,16 @@ Rules:
 
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={api_key}"
+        f"{model}:generateContent"
     )
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
         method="POST",
     )
 
@@ -128,9 +131,27 @@ Rules:
         if field not in parsed:
             raise RuntimeError(f"Gemini response missing field: {field}")
 
+    # Clamp percentages to [0, 100]
+    pct_in = max(0.0, min(100.0, float(parsed["percentage_in"])))
+    pct_out = max(0.0, min(100.0, float(parsed["percentage_out"])))
+
+    # Normalize so they sum to 100
+    total = pct_in + pct_out
+    if total > 0:
+        pct_in = round(pct_in / total * 100.0, 2)
+        pct_out = round(pct_out / total * 100.0, 2)
+    else:
+        pct_in = 50.0
+        pct_out = 50.0
+
+    # Validate confidence against allowed values
+    confidence = str(parsed["confidence"]).lower().strip()
+    if confidence not in ("high", "medium", "low"):
+        confidence = "low"
+
     return {
-        "percentage_in": float(parsed["percentage_in"]),
-        "percentage_out": float(parsed["percentage_out"]),
-        "confidence": str(parsed["confidence"]),
+        "percentage_in": pct_in,
+        "percentage_out": pct_out,
+        "confidence": confidence,
         "explanation": str(parsed["explanation"]),
     }
