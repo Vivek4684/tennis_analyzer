@@ -100,6 +100,37 @@ class TestAnalyzeEndpoint:
         assert "explanation" in data
         assert "id" in data
 
+    @patch("app.analyze_frames")
+    def test_analyze_with_shot_type_serve(self, mock_analyze, client, sample_frame):
+        mock_analyze.return_value = mock_gemini_response()
+
+        resp = client.post("/analyze", json={"frames": [sample_frame], "shot_type": "serve"})
+        assert resp.status_code == 200
+        mock_analyze.assert_called_once()
+        # Verify shot_type was passed
+        call_kwargs = mock_analyze.call_args
+        assert call_kwargs[1]["shot_type"] == "serve"
+
+    @patch("app.analyze_frames")
+    def test_analyze_with_shot_type_rally(self, mock_analyze, client, sample_frame):
+        mock_analyze.return_value = mock_gemini_response()
+
+        resp = client.post("/analyze", json={"frames": [sample_frame], "shot_type": "rally"})
+        assert resp.status_code == 200
+        mock_analyze.assert_called_once()
+        call_kwargs = mock_analyze.call_args
+        assert call_kwargs[1]["shot_type"] == "rally"
+
+    @patch("app.analyze_frames")
+    def test_analyze_invalid_shot_type_defaults_to_rally(self, mock_analyze, client, sample_frame):
+        mock_analyze.return_value = mock_gemini_response()
+
+        resp = client.post("/analyze", json={"frames": [sample_frame], "shot_type": "invalid"})
+        assert resp.status_code == 200
+        mock_analyze.assert_called_once()
+        call_kwargs = mock_analyze.call_args
+        assert call_kwargs[1]["shot_type"] == "rally"
+
     def test_analyze_no_frames(self, client):
         resp = client.post("/analyze", json={"frames": []})
         assert resp.status_code == 400
@@ -137,6 +168,61 @@ class TestAnalyzeEndpoint:
         assert resp.status_code == 500
         data = resp.get_json()
         assert "error" in data
+
+
+class TestDetectContactEndpoint:
+    @patch("app.detect_ball_contact")
+    def test_detect_contact_success(self, mock_detect, client, sample_frame):
+        mock_detect.return_value = {
+            "contact_frame_index": 3,
+            "ball_state": "ground",
+            "description": "Ball touching the court surface near the baseline."
+        }
+
+        resp = client.post("/detect-contact", json={"frames": [sample_frame] * 5})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["contact_frame_index"] == 3
+        assert data["ball_state"] == "ground"
+        assert "description" in data
+
+    def test_detect_contact_no_frames(self, client):
+        resp = client.post("/detect-contact", json={"frames": []})
+        assert resp.status_code == 400
+
+    def test_detect_contact_missing_frames_key(self, client):
+        resp = client.post("/detect-contact", json={})
+        assert resp.status_code == 400
+
+    def test_detect_contact_no_body(self, client):
+        resp = client.post("/detect-contact", content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_detect_contact_too_many_frames(self, client, sample_frame):
+        frames = [sample_frame] * 11
+        resp = client.post("/detect-contact", json={"frames": frames})
+        assert resp.status_code == 400
+
+    @patch("app.detect_ball_contact")
+    def test_detect_contact_gemini_error(self, mock_detect, client, sample_frame):
+        mock_detect.side_effect = RuntimeError("Gemini API error 500: Internal error")
+
+        resp = client.post("/detect-contact", json={"frames": [sample_frame]})
+        assert resp.status_code == 500
+        data = resp.get_json()
+        assert "error" in data
+
+    @patch("app.detect_ball_contact")
+    def test_detect_contact_with_data_url_prefix(self, mock_detect, client, sample_frame):
+        mock_detect.return_value = {
+            "contact_frame_index": 0,
+            "ball_state": "air",
+            "description": "Ball in the air."
+        }
+        frame_with_prefix = "data:image/jpeg;base64," + sample_frame
+
+        resp = client.post("/detect-contact", json={"frames": [frame_with_prefix]})
+        assert resp.status_code == 200
 
 
 class TestHistoryEndpoint:
@@ -195,3 +281,21 @@ class TestIndexPage:
     def test_index_has_camera_facing_mode(self, client):
         resp = client.get("/")
         assert b'environment' in resp.data
+
+    def test_index_has_two_minute_recording(self, client):
+        resp = client.get("/")
+        assert b'MAX_RECORD_SECONDS = 120' in resp.data
+
+    def test_index_has_detect_contact_endpoint(self, client):
+        resp = client.get("/")
+        assert b'/detect-contact' in resp.data
+
+    def test_index_has_shot_type_selector(self, client):
+        resp = client.get("/")
+        assert b'shotTypeSelect' in resp.data
+        assert b'serve' in resp.data
+        assert b'rally' in resp.data
+
+    def test_index_has_upload_option(self, client):
+        resp = client.get("/")
+        assert b'upload' in resp.data.lower()

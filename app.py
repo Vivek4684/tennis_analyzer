@@ -11,7 +11,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 from database import delete_call, get_all_calls, init_db, save_call
-from gemini_client import analyze_frames
+from gemini_client import analyze_frames, detect_ball_contact
 
 try:
     from dotenv import load_dotenv
@@ -50,11 +50,16 @@ def health():
     })
 
 
-@app.route("/analyze", methods=["POST"])
-def analyze():
+@app.route("/detect-contact", methods=["POST"])
+def detect_contact():
     """
-    Accepts JSON with 'frames' array of base64-encoded JPEG strings.
-    Validates frames, sends to Gemini for analysis, saves result.
+    Step 1 of the two-step agent flow.
+    Accepts JSON with 'frames' array of base64-encoded JPEG strings sampled
+    from the full recording. Uses Gemini to identify which frame is closest
+    to the ball making contact with the ground.
+
+    Returns the index of the contact frame so the client can extract a
+    5-second window of frames around that point.
     """
     data = request.get_json()
     if not data:
@@ -72,6 +77,53 @@ def analyze():
     for i, frame in enumerate(frames):
         if not isinstance(frame, str) or not frame.strip():
             return jsonify({"error": f"Frame {i} is not a valid base64 string."}), 400
+        clean = frame
+        if "," in clean and clean.startswith("data:"):
+            clean = clean.split(",", 1)[1]
+        try:
+            base64.b64decode(clean, validate=True)
+        except Exception:
+            return jsonify({"error": f"Frame {i} is not valid base64."}), 400
+        validated_frames.append(clean)
+
+    try:
+        result = detect_ball_contact(validated_frames)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify(result)
+
+
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    """
+    Step 2 of the two-step agent flow (or standalone).
+    Accepts JSON with 'frames' array of base64-encoded JPEG strings
+    (extracted from a 5-second window around ball contact) and optional
+    'shot_type' field ("serve" or "rally").
+    Validates frames, sends to Gemini for in/out analysis, saves result.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "JSON body required."}), 400
+
+    frames = data.get("frames")
+    if not frames or not isinstance(frames, list):
+        return jsonify({"error": "A 'frames' array is required."}), 400
+
+    if len(frames) < 1 or len(frames) > 10:
+        return jsonify({"error": "Must provide between 1 and 10 frames."}), 400
+
+    # Validate shot_type
+    shot_type = data.get("shot_type", "rally")
+    if shot_type not in ("serve", "rally"):
+        shot_type = "rally"
+
+    # Validate base64 encoding
+    validated_frames = []
+    for i, frame in enumerate(frames):
+        if not isinstance(frame, str) or not frame.strip():
+            return jsonify({"error": f"Frame {i} is not a valid base64 string."}), 400
         # Strip data URL prefix if present
         clean = frame
         if "," in clean and clean.startswith("data:"):
@@ -83,7 +135,7 @@ def analyze():
         validated_frames.append(clean)
 
     try:
-        result = analyze_frames(validated_frames)
+        result = analyze_frames(validated_frames, shot_type=shot_type)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 500
 
